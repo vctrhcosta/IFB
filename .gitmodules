@@ -22,3 +22,6 @@
 [submodule "tecnologia-propriedade-materiais"]
 	path = tecnologia-propriedade-materiais
 	url = https://github.com/vctrhcosta/tecnologia-propriedade-materiais-ifb.git
+[submodule "ergonomia"]
+	path = ergonomia
+	url = https://github.com/vctrhcosta/ergonomia-ifb.git

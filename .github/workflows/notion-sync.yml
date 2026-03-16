@@ -1,0 +1,87 @@
+name: Notion Sync
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # 06:00 UTC / 03:00 BRT daily
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Sync mode'
+        required: true
+        default: 'sync'
+        type: choice
+        options:
+          - sync
+          - pull
+          - push
+      discipline:
+        description: 'Specific discipline (leave empty for all)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Restore sync state
+        uses: actions/cache@v4
+        with:
+          path: .notion-sync-state.json
+          key: notion-sync-state-${{ github.ref }}
+          restore-keys: |
+            notion-sync-state-
+
+      - name: Run sync
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        run: |
+          MODE="${{ github.event.inputs.mode || 'sync' }}"
+          DISCIPLINE="${{ github.event.inputs.discipline }}"
+          ARGS="$MODE --verbose"
+          if [ -n "$DISCIPLINE" ]; then
+            ARGS="$ARGS --discipline $DISCIPLINE"
+          fi
+          python scripts/notion-sync.py $ARGS
+
+      - name: Commit submodule changes
+        run: |
+          for dir in ergonomia tecnologia-propriedade-materiais metodologia-pratica-projeto materiais-processos-fabricacao-1 marca-curso; do
+            if [ -d "$dir" ] && [ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]; then
+              echo "Committing changes in $dir..."
+              git -C "$dir" add -A
+              git -C "$dir" commit -m "Sync from Notion ($(date -u +%Y-%m-%d))"
+              git -C "$dir" push
+            fi
+          done
+
+      - name: Commit parent repo
+        run: |
+          git add -A
+          if ! git diff --cached --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git commit -m "Sync Notion content ($(date -u +%Y-%m-%d))"
+            git push
+          else
+            echo "No changes to commit in parent repo."
+          fi
